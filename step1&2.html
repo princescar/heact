@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Step 3: Concurrent Mode</title>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script type="text/babel">
+    const React = { createElement };
+    const ReactDom = { render };
+
+    function flatten(arr) {
+      const result = [];
+      arr.forEach(child => {
+        if (!Array.isArray(child)) result.push(child);
+        else result.push(...flatten(child));
+      });
+      return result;
+    }
+
+    function createElement(type, props, ...children) {
+      return {
+        type,
+        props: {
+          ...props,
+          children: flatten(children),
+        },
+      };
+    }
+
+    function render(node, container) {
+      let dom;
+      if (typeof node === 'string') {
+        dom = document.createTextNode(node);
+      } else {
+        dom = document.createElement(node.type);
+        const { children, ...attributes } = node.props;
+        Object.assign(dom, attributes);
+        children.forEach(child => render(child, dom));
+      }
+      container.appendChild(dom);
+    }
+  </script>
+  <script type="text/babel" data-presets="react">
+    const element = <h1 title="foo">Hello</h1>;
+    const container = document.getElementById('root');
+    ReactDom.render(element, container);
+  </script>
+</body>
+</html>

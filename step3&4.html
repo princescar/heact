@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Step 3: Concurrent Mode & Step 4: Fibers</title>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script>
+    const React = { createElement };
+    const ReactDom = { render };
+
+    function flatten(arr) {
+      const result = [];
+      arr.forEach(child => {
+        if (!Array.isArray(child)) result.push(child);
+        else result.push(...flatten(child));
+      });
+      return result;
+    }
+
+    function createElement(type, props, ...children) {
+      return {
+        type,
+        props: {
+          ...props,
+          children: flatten(children),
+        },
+      };
+    }
+
+    let nextRenderTask = null;
+    function render(node, container) {
+      nextRenderTask = { fiber: new Fiber(node), container };
+      requestIdleCallback(performRenderTask);
+    }
+
+    function performRenderTask(deadline) {
+      while (deadline.timeRemaining() > 0 && nextRenderTask) {
+        renderFiber(nextRenderTask);
+      }
+      if (nextRenderTask) requestIdleCallback(performRenderTask);
+    }
+
+    function renderFiber({ fiber, container }) {
+      let dom;
+      if (typeof fiber.node !== 'object') {
+        dom = document.createTextNode(fiber.node);
+      } else {
+        dom = document.createElement(fiber.node.type);
+        const { children, ...attributes } = fiber.node.props;
+        Object.assign(dom, attributes);
+      }
+      container.appendChild(dom);
+      if (fiber.child) {
+        nextRenderTask = { fiber: fiber.child, container: dom };
+      } else if (fiber.next) {
+        nextRenderTask = { fiber: fiber.next, container };
+      } else {
+        let ancestor = fiber, ancestorContainer = container;
+        while (!ancestor.next && ancestor.parent) {
+          ancestor = ancestor.parent;
+          ancestorContainer = ancestorContainer.parentElement;
+        }
+        nextRenderTask = ancestor.next ? { fiber: ancestor.next, container: ancestorContainer } : null;
+      }
+    }
+
+    class Fiber {
+      constructor(node, parent, next) {
+        this.node = node;
+        this.parent = parent;
+        this.next = next;
+        const children = node.props ? node.props.children : [];
+        if (children.length > 0) {
+          this.child = new Fiber(children[0], this);
+          for (let i = 1, prev = this.child; i < children.length; i++) {
+            const curr = new Fiber(children[i], this);
+            prev.next = curr;
+            prev = curr;
+          }
+        }
+      }
+    }
+  </script>
+  <script type="text/babel" data-presets="react">
+    const element = (
+      <div>
+        <h1 title="foo">Hello</h1>
+        <ul>
+          <li>start</li>
+          {new Array(100000).fill(0).map((_, i) => (
+            <li>{i}</li>
+          ))}
+          <li>end</li>
+        </ul>
+      </div>
+    );
+    const container = document.getElementById('root');
+    ReactDom.render(element, container);
+  </script>
+</body>
+</html>
