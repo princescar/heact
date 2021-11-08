@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Step 5: Render and Commit Phases</title>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script>
+    const React = { createElement };
+    const ReactDom = { render };
+
+    function flatten(arr, depth = 1) {
+      if (depth === 0) return arr;
+      const result = [];
+      arr.forEach(child => {
+        if (!Array.isArray(child)) result.push(child);
+        else result.push(...flatten(child, depth - 1));
+      });
+      return result;
+    }
+
+    function createElement(type, props, ...children) {
+      return {
+        type,
+        props: {
+          ...props,
+          children: flatten(children),
+        },
+      };
+    }
+
+    let nextUnitOfWork = null;
+    function workLoop(deadline) {
+      while (deadline.timeRemaining() > 0 && nextUnitOfWork)
+        nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
+      if (nextUnitOfWork) requestIdleCallback(workLoop);
+      else commitRoot();
+    }
+
+    let wipRoot = null;
+    function render(node, container) {
+      console.time('render');
+      wipRoot = nextUnitOfWork = { node, container };
+      requestIdleCallback(workLoop);
+    }
+
+    function commitRoot() {
+      commitWork(wipRoot.child);
+      wipRoot.container.appendChild(wipRoot.dom);
+      wipRoot = null;
+      console.timeEnd('render');
+    }
+
+    // function commitWork(fiber) {
+    //   if (!fiber) return;
+    //   fiber.parent.dom.appendChild(fiber.dom);
+    //   commitWork(fiber.child);
+    //   commitWork(fiber.next);
+    // }
+
+    function commitWork(fiber) {
+      let curr = fiber;
+      while (curr) {
+        curr.parent.dom.appendChild(curr.dom);
+        if (curr.child) curr = curr.child;
+        else if (curr.next) curr = curr.next;
+        else {
+          let parent = curr;
+          while (parent && !parent.next) {
+            parent.child = null;
+            parent = parent.parent;
+          }
+          if (parent) parent.child = null;
+          curr = parent ? parent.next : null;
+        }
+      }
+    }
+
+    function performUnitOfWork(fiber) {
+      fiber.dom = createDomNode(fiber.node);
+      if (fiber.node.props && fiber.node.props.children) {
+        let prev = null, child = null;
+        for (const node of fiber.node.props.children) {
+          const curr = { node, parent: fiber };
+          if (prev) prev.next = curr;
+          else child = curr;
+          prev = curr;
+        }
+        fiber.child = child;
+        return child;
+      } else {
+        let parent = fiber;
+        while (parent && !parent.next) parent = parent.parent;
+        return parent ? parent.next : null;
+      }
+    }
+
+    function createDomNode(node) {
+      if (typeof node !== 'object') {
+        return document.createTextNode(node)
+      } else {
+        const dom = document.createElement(node.type);
+        const { children, ...attrs } = node.props;
+        Object.assign(dom, attrs);
+        return dom;
+      }
+    }
+  </script>
+  <script type="text/babel" data-presets="react">
+    const element = (
+      <div>
+        <h1 title="foo">Hello</h1>
+        <ul>
+          <li>start</li>
+          {new Array(100000).fill(0).map((_, i) => (
+            <li key={i}>{i}</li>
+          ))}
+          <li>end</li>
+        </ul>
+      </div>
+    );
+    const container = document.getElementById('root');
+    ReactDom.render(element, container);
+  </script>
+</body>
+</html>

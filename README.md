@@ -9,6 +9,7 @@ Practice of building a React-like library with modern features.
 2. React.render method.
 3. Concurrent rendering.
 4. Fiber data structure.
+5. Separate render and commit phases.
 
 ## Reference
 
