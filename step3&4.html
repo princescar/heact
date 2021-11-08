@@ -14,11 +14,12 @@
     const React = { createElement };
     const ReactDom = { render };
 
-    function flatten(arr) {
+    function flatten(arr, depth = 1) {
+      if (depth === 0) return arr;
       const result = [];
       arr.forEach(child => {
         if (!Array.isArray(child)) result.push(child);
-        else result.push(...flatten(child));
+        else result.push(...flatten(child, depth - 1));
       });
       return result;
     }
@@ -33,57 +34,51 @@
       };
     }
 
-    let nextRenderTask = null;
+    let nextUnitOfWork = null;
+    function workLoop(deadline) {
+      while (deadline.timeRemaining() > 0 && nextUnitOfWork)
+        nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
+      if (nextUnitOfWork) requestIdleCallback(workLoop);
+    }
+
     function render(node, container) {
-      nextRenderTask = { fiber: new Fiber(node), container };
-      requestIdleCallback(performRenderTask);
+      nextUnitOfWork = { node, container };
+      requestIdleCallback(workLoop);
     }
 
-    function performRenderTask(deadline) {
-      while (deadline.timeRemaining() > 0 && nextRenderTask) {
-        renderFiber(nextRenderTask);
-      }
-      if (nextRenderTask) requestIdleCallback(performRenderTask);
-    }
-
-    function renderFiber({ fiber, container }) {
-      let dom;
-      if (typeof fiber.node !== 'object') {
-        dom = document.createTextNode(fiber.node);
-      } else {
-        dom = document.createElement(fiber.node.type);
-        const { children, ...attributes } = fiber.node.props;
-        Object.assign(dom, attributes);
-      }
-      container.appendChild(dom);
-      if (fiber.child) {
-        nextRenderTask = { fiber: fiber.child, container: dom };
-      } else if (fiber.next) {
-        nextRenderTask = { fiber: fiber.next, container };
-      } else {
-        let ancestor = fiber, ancestorContainer = container;
-        while (!ancestor.next && ancestor.parent) {
-          ancestor = ancestor.parent;
-          ancestorContainer = ancestorContainer.parentElement;
-        }
-        nextRenderTask = ancestor.next ? { fiber: ancestor.next, container: ancestorContainer } : null;
-      }
-    }
-
-    class Fiber {
-      constructor(node, parent, next) {
-        this.node = node;
-        this.parent = parent;
-        this.next = next;
-        const children = node.props ? node.props.children : [];
-        if (children.length > 0) {
-          this.child = new Fiber(children[0], this);
-          for (let i = 1, prev = this.child; i < children.length; i++) {
-            const curr = new Fiber(children[i], this);
-            prev.next = curr;
-            prev = curr;
+    function performUnitOfWork(fiber) {
+      const dom = createDomNode(fiber.node);
+      fiber.container.appendChild(dom);
+      if (fiber.node.props && fiber.node.props.children) {
+        let prev = null, firstChild = null;
+        for (const node of fiber.node.props.children) {
+          const curr = {
+            node,
+            container: dom,
+            parent: fiber
           }
+          if (prev) prev.next = curr;
+          else firstChild = curr;
+          prev = curr;
         }
+        return firstChild;
+      } else if (fiber.next) {
+        return fiber.next;
+      } else {
+        let parent = fiber.parent;
+        while (parent && !parent.next) parent = parent.parent;
+        return parent ? parent.next : null;
+      }
+    }
+
+    function createDomNode(node) {
+      if (typeof node !== 'object') {
+        return document.createTextNode(node)
+      } else {
+        const dom = document.createElement(node.type);
+        const { children, ...attrs } = node.props;
+        Object.assign(dom, attrs);
+        return dom;
       }
     }
   </script>
@@ -94,7 +89,7 @@
         <ul>
           <li>start</li>
           {new Array(100000).fill(0).map((_, i) => (
-            <li>{i}</li>
+            <li key={i}>{i}</li>
           ))}
           <li>end</li>
         </ul>
